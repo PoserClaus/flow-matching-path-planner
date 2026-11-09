@@ -29,10 +29,10 @@ print("Flow Matching model loaded successfully for verification!")
 
 
 # ==========================================
-# 2. ODE SAMPLING FUNCTION (Generate Future Path)
+# 2. ODE SAMPLING FUNCTION (Record All Steps)
 # ==========================================
 @torch.no_grad()
-def generate_path(start, goal, num_steps=20):
+def generate_path_steps(start, goal, num_steps=30):
   c_vector = [
       start[0] / WIDTH,
       start[1] / HEIGHT,
@@ -54,21 +54,32 @@ def generate_path(start, goal, num_steps=20):
   x_t = straight_line.flatten().unsqueeze(0) / scale_vector
 
   dt = 1.0 / num_steps
+  trajectory_steps = []
+
+  # Save initial straight-line prior (t = 0.0)
+  initial_traj = x_t.clone().squeeze(0).reshape(40, 2)
+  initial_traj[:, 0] *= WIDTH
+  initial_traj[:, 1] *= HEIGHT
+  trajectory_steps.append(initial_traj.tolist())
+
+  # Step-by-step ODE integration loop
   for i in range(num_steps):
     t_val = i * dt
     t = torch.full((1, 1), t_val, dtype=torch.float32)
     v_pred = model(x_t, t, c)
     x_t = x_t + v_pred * dt
 
-  # Un-normalize back to pixels (X by WIDTH, Y by HEIGHT)
-  traj = x_t.squeeze(0).reshape(40, 2)
-  traj[:, 0] *= WIDTH
-  traj[:, 1] *= HEIGHT
-  return traj.tolist()
+    # Save current intermediate state
+    step_traj = x_t.clone().squeeze(0).reshape(40, 2)
+    step_traj[:, 0] *= WIDTH
+    step_traj[:, 1] *= HEIGHT
+    trajectory_steps.append(step_traj.tolist())
+
+  return trajectory_steps
 
 
 # ==========================================
-# 3. SIMULATION & VISUALIZATION LOOP
+# 3. SIMULATION & ANIMATION LOOP
 # ==========================================
 obstacles = get_default_obstacles()
 fixed_goal = (800, 300)
@@ -83,8 +94,15 @@ def get_random_start():
       return (sx, sy)
 
 
+# Initialize starts and precompute all animation steps for each path
 test_starts = [get_random_start() for _ in range(8)]
-current_paths = [generate_path(start, fixed_goal) for start in test_starts]
+current_path_steps = [
+    generate_path_steps(start, fixed_goal) for start in test_starts
+]
+
+anim_step = 0
+max_steps = 20
+frame_counter = 0
 
 running = True
 while running:
@@ -95,10 +113,20 @@ while running:
       running = False
     elif event.type == pygame.KEYDOWN:
       if event.key == pygame.K_SPACE:
+        # Generate new random starts and reset animation progress
         test_starts = [get_random_start() for _ in range(8)]
-        current_paths = [
-            generate_path(start, fixed_goal) for start in test_starts
+        current_path_steps = [
+            generate_path_steps(start, fixed_goal) for start in test_starts
         ]
+        anim_step = 0
+        frame_counter = 0
+
+  # Advance animation step every few frames to control speed
+  frame_counter += 1
+  if frame_counter >= 3:  # Adjust speed here (higher = slower animation)
+    frame_counter = 0
+    if anim_step < max_steps:
+      anim_step += 1
 
   screen.fill(WHITE)
 
@@ -109,14 +137,18 @@ while running:
   for obs in obstacles:
     pygame.draw.rect(screen, GRAY, obs, border_radius=6)
 
-  # Draw Start Points and Paths
-  for start, path in zip(test_starts, current_paths):
+  # Draw Start Points and Current Morphing Paths
+  for start, path_steps in zip(test_starts, current_path_steps):
     pygame.draw.circle(screen, (220, 50, 50), (int(start[0]), int(start[1])), 6)
-    for pt in path:
+
+    # Get the path points corresponding to the current animation step
+    current_pts = path_steps[anim_step]
+    for pt in current_pts:
       pygame.draw.circle(screen, (0, 160, 220), (int(pt[0]), int(pt[1])), 4)
 
   pygame.display.set_caption(
-      "Flow Matching Verifier - Press [SPACE] to generate new random starts"
+      f"Flow Matching Verifier [Step {anim_step}/{max_steps}] - Press [SPACE]"
+      " to reset"
   )
   pygame.display.flip()
 

@@ -100,4 +100,4 @@ def visualize_dataset(dataset_path="expert_dataset.pt", max_trajectories=15):
 
 if __name__ == "__main__":
   # You can easily change how many trajectories are displayed right here:
-  visualize_dataset(dataset_path="expert_dataset.pt", max_trajectories=10)
+  visualize_dataset(dataset_path="expert_dataset.pt", max_trajectories=300)
