@@ -6,3 +6,10 @@ __pycache__/
 
 # Jupyter notebooks checkpoints
 .ipynb_checkpoints/
+
+# Virtual environment
+.venv/
+
+# Generated datasets and training runs
+src/Training_Set_Generation/Test_Sets/*.npz
+src/Trajectory_Planning/runs/

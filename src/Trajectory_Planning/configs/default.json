@@ -1,0 +1,21 @@
+{
+  "name": "mlp",
+  "seed": 0,
+
+  "dataset": "../Training_Set_Generation/Test_Sets/default.npz",
+  "inputs": ["lidar"],
+  "normalize": true,
+  "val_fraction": 0.2,
+
+  "model": {
+    "type": "mlp",
+    "params": {"hidden": 256, "n_layers": 3}
+  },
+
+  "training": {
+    "steps": 40000,
+    "batch_size": 256,
+    "lr": 0.0003,
+    "eval_every": 200
+  }
+}
