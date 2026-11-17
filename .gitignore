@@ -4,5 +4,9 @@ __pycache__/
 *.pyo
 *.pyd
 
+data/
+runs/
+src/legacy
+
 # Jupyter notebooks checkpoints
 .ipynb_checkpoints/

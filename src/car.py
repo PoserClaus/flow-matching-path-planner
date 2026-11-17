@@ -1,135 +1,134 @@
 import math
+
+import numpy as np
 import pygame
-from config import BLUE, LASER_GREEN, RED
+from config import BLUE
 
 
-class Car:
+class CarRotate:
+  """Car that can rotate on the spot and follows a planned path.
 
-  def __init__(self, x, y):
-    self.x = x
-    self.y = y
+  Heading convention: radians, atan2(dy, dx) in screen coordinates (y down),
+  so heading 0 points right and positive angles turn clockwise on screen.
+  This is the same convention as the verifier (sin/cos of the agent angle).
+  """
+
+  def __init__(self, x, y, heading=0.0):
+    self.x = float(x)
+    self.y = float(y)
+    self.heading = float(heading)
     self.width = 44
     self.height = 22
-    self.angle = 0
-    self.speed = 0
+
+    self.speed = 0.0
     self.max_speed = 4.5
-    self.acceleration = 0.1
-    self.steering_speed = 3.0
+    self.acceleration = 0.15
+    self.deceleration = 0.35
+    self.rotate_speed = math.radians(5.0)  # max turn per frame (also at speed 0)
+    self.turn_in_place_angle = math.radians(40.0)  # above this error: stop and turn
+    self.lookahead = 20.0
+
+    self.path = None
+    self.path_idx = 0
     self.path_history = []
-    self.ray_endpoints = []
+    self.goal = None  # optional real goal; the path may only cover part of the way
 
-  def get_lidar_readings(self, obstacles, max_range=150):
-    ray_angles = [-60, -30, 0, 30, 60]
-    readings = []
-    self.ray_endpoints = []
+  # ------------------------------------------------------------------
+  def set_path(self, path):
+    self.path = np.asarray(path, dtype=float)
+    self.path_idx = 0
+    self.path_history = [(self.x, self.y)]
 
-    for angle_offset in ray_angles:
-      ray_angle = math.radians(self.angle + angle_offset)
-      distance = max_range
-      hit_point = (
-          self.x + max_range * math.cos(ray_angle),
-          self.y - max_range * math.sin(ray_angle),
-      )
+  def _lookahead_point(self):
+    p = self.path
+    acc = 0.0
+    for j in range(self.path_idx, len(p) - 1):
+      acc += math.hypot(p[j + 1][0] - p[j][0], p[j + 1][1] - p[j][1])
+      if acc >= self.lookahead:
+        return p[j + 1]
+    return p[-1]
 
-      for step in range(8, max_range, 4):
-        check_x = self.x + step * math.cos(ray_angle)
-        check_y = self.y - step * math.sin(ray_angle)
-        point_rect = pygame.Rect(check_x - 2, check_y - 2, 4, 4)
+  def distance_to_goal(self):
+    gx, gy = self.goal if self.goal is not None else self.path[-1]
+    return math.hypot(gx - self.x, gy - self.y)
 
-        hit = False
-        for obs in obstacles:
-          if obs.colliderect(point_rect):
-            hit = True
-            break
+  def reached(self, tol=15.0):
+    return self.path is not None and self.distance_to_goal() < tol
 
-        if hit:
-          distance = step
-          hit_point = (check_x, check_y)
-          break
+  # ------------------------------------------------------------------
+  def follow_path(self):
+    """One simulation step: turn towards the lookahead point, drive if aligned."""
+    if self.path is None:
+      return
 
-      self.ray_endpoints.append(hit_point)
-      readings.append(distance / max_range)
+    # closest path point, searched only forward so the car never jumps back
+    end = min(len(self.path), self.path_idx + 15)
+    seg = self.path[self.path_idx:end]
+    self.path_idx += int(
+        np.argmin(np.hypot(seg[:, 0] - self.x, seg[:, 1] - self.y))
+    )
 
-    return readings
+    tx, ty = self._lookahead_point()
+    desired = math.atan2(ty - self.y, tx - self.x)
+    err = (desired - self.heading + math.pi) % (2 * math.pi) - math.pi
 
-  def expert_drive(self, goal_x, goal_y, obstacles):
-    # 1. Goal Attraction
-    dx = goal_x - self.x
-    dy = self.y - goal_y
-    target_angle = math.degrees(math.atan2(dy, dx))
-    angle_diff = (target_angle - self.angle + 180) % 360 - 180
+    # rotation works at any speed, including zero
+    self.heading += max(-self.rotate_speed, min(self.rotate_speed, err))
+    self.heading = (self.heading + math.pi) % (2 * math.pi) - math.pi
 
-    # 2. LiDAR Obstacle Repulsion (Tighter tuning)
-    lidar = self.get_lidar_readings(obstacles, max_range=150)
-
-    d0 = (1.0 - lidar[0]) ** 2.0
-    d1 = (1.0 - lidar[1]) ** 2.0
-    d2 = (1.0 - lidar[2]) ** 2.0
-    d3 = (1.0 - lidar[3]) ** 2.0
-    d4 = (1.0 - lidar[4]) ** 2.0
-
-    left_danger = d0 * 2.0 + d1 * 1.0
-    right_danger = d4 * 2.0 + d3 * 1.0
-
-    if d2 > 0.2:
-      clearance_difference = lidar[3] - lidar[1]
-      if abs(clearance_difference) < 0.05:
-        if angle_diff > 0:
-          right_danger += d2 * 2.5
-        else:
-          left_danger += d2 * 2.5
-      else:
-        if clearance_difference > 0:
-          left_danger += d2 * 2.5
-        else:
-          right_danger += d2 * 2.5
-
-    avoidance_steering = (left_danger - right_danger) * 55.0
-    total_steering_error = angle_diff + avoidance_steering
-
-    if total_steering_error > 2:
-      self.angle += self.steering_speed
-    elif total_steering_error < -2:
-      self.angle -= self.steering_speed
-
-    target_speed = self.max_speed * (0.4 + 0.6 * lidar[2])
-    if lidar[2] < 0.25:
-      target_speed = 1.2
+    # target speed: zero while badly misaligned, slower near the goal
+    if abs(err) > self.turn_in_place_angle:
+      target_speed = 0.0
+    else:
+      align = 1.0 - abs(err) / self.turn_in_place_angle
+      target_speed = self.max_speed * (0.3 + 0.7 * align)
+    target_speed = min(target_speed, 0.12 * self.distance_to_goal() + 0.6)
 
     if self.speed < target_speed:
       self.speed = min(target_speed, self.speed + self.acceleration)
-    elif self.speed > target_speed:
-      self.speed = max(target_speed, self.speed - self.acceleration)
+    else:
+      self.speed = max(target_speed, self.speed - self.deceleration)
 
-    rad = math.radians(self.angle)
-    self.x += self.speed * math.cos(rad)
-    self.y -= self.speed * math.sin(rad)
+    self.x += self.speed * math.cos(self.heading)
+    self.y += self.speed * math.sin(self.heading)
 
-    # Record history path
-    if (
-        len(self.path_history) == 0
-        or math.hypot(
-            self.x - self.path_history[-1][0], self.y - self.path_history[-1][1]
-        )
-        > 10
-    ):
+    last = self.path_history[-1]
+    if math.hypot(self.x - last[0], self.y - last[1]) > 4.0:
       self.path_history.append((self.x, self.y))
-      if len(self.path_history) > 1200:
-        self.path_history.pop(0)
 
+  # ------------------------------------------------------------------
+  def footprint_points(self, step=4.0):
+    """Points along the outline of the rotated car body."""
+    hw, hh = self.width / 2, self.height / 2
+    xs = np.arange(-hw, hw + 0.1, step)
+    ys = np.arange(-hh, hh + 0.1, step)
+    local = (
+        [(x, -hh) for x in xs]
+        + [(x, hh) for x in xs]
+        + [(-hw, y) for y in ys]
+        + [(hw, y) for y in ys]
+    )
+    c, s = math.cos(self.heading), math.sin(self.heading)
+    return [
+        (self.x + px * c - py * s, self.y + px * s + py * c)
+        for px, py in local
+    ]
+
+  def collides(self, obstacles):
+    for px, py in self.footprint_points():
+      for obs in obstacles:
+        if obs.collidepoint(int(px), int(py)):
+          return True
+    return False
+
+  # ------------------------------------------------------------------
   def draw(self, surface):
-    # Draw LiDAR lasers
-    for pt in self.ray_endpoints:
-      pygame.draw.line(surface, LASER_GREEN, (self.x, self.y), pt, 1)
-      pygame.draw.circle(surface, RED, (int(pt[0]), int(pt[1])), 3)
-
-    # Draw Car Body
     car_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
     pygame.draw.rect(car_surface, BLUE, (0, 0, self.width, self.height), 4)
     pygame.draw.rect(
         car_surface, (255, 255, 255), (self.width - 10, 4, 6, self.height - 8)
     )
-
-    rotated_surface = pygame.transform.rotate(car_surface, self.angle)
-    new_rect = rotated_surface.get_rect(center=(self.x, self.y))
-    surface.blit(rotated_surface, new_rect.topleft)
+    # pygame rotates counter-clockwise; our heading is clockwise on screen
+    rotated = pygame.transform.rotate(car_surface, -math.degrees(self.heading))
+    rect = rotated.get_rect(center=(self.x, self.y))
+    surface.blit(rotated, rect.topleft)
