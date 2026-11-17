@@ -10,6 +10,5 @@ __pycache__/
 # Virtual environment
 .venv/
 
-# Generated datasets and training runs
+# Generated datasets
 src/Training_Set_Generation/Test_Sets/*.npz
-src/Trajectory_Planning/runs/

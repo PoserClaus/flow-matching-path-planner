@@ -13,8 +13,11 @@ Das Format steht in Dataset_Format.py.
 
 Aufruf (aus dem Ordner Training_Set_Generation):
     python Generate_Testset.py                                   # configs/default.json
-    python Generate_Testset.py --config configs/default.json --out Test_Sets/train.npz
+    python Generate_Testset.py --config configs/mein_test.json
     python Generate_Testset.py --n-scenes 5                      # schneller Test
+
+Gespeichert wird unter Test_Sets/<Datum_Uhrzeit>.npz. Die benutzte Config
+steht im Datensatz unter meta["config"].
 """
 
 from __future__ import annotations
@@ -80,7 +83,13 @@ def sample_pair(scene, rng, min_dist: float, min_clearance: float, max_tries: in
 # ─────────────────────────────────────────────────────────────────────────────
 # Generierung
 # ─────────────────────────────────────────────────────────────────────────────
-def generate(config: dict, verbose: bool = True):
+def new_dataset_path() -> str:
+    """Neuer Dateiname aus dem Erzeugungszeitpunkt, z. B. Test_Sets/2026-11-17_14-32-05.npz"""
+    return os.path.join(HERE, "Test_Sets", time.strftime("%Y-%m-%d_%H-%M-%S") + ".npz")
+
+
+def generate(config: dict, verbose: bool = True, on_scene=None):
+    """on_scene(i, n): optional, wird nach jeder Szene aufgerufen (Fortschrittsanzeige der App)."""
     car, scene_gen, solver, sensors = build(config)
     rng = np.random.default_rng(config["seed"])
     pairs_cfg = config["pairs"]
@@ -139,6 +148,8 @@ def generate(config: dict, verbose: bool = True):
         if verbose:
             print(f"  Szene {i + 1}/{config['n_scenes']}: {len(scene.boxes)} Boxen, "
                   f"{n_samples_scene} Samples  ({time.time() - t0:.0f} s)")
+        if on_scene is not None:
+            on_scene(i + 1, config["n_scenes"])
 
     arrays = {
         "goal_rel": np.array(samples["goal_rel"], dtype=np.float32).reshape(-1, 3),
@@ -168,7 +179,7 @@ def generate(config: dict, verbose: bool = True):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Trainingsdatensatz erzeugen.")
     parser.add_argument("--config", default=os.path.join(HERE, "configs", "default.json"))
-    parser.add_argument("--out", default=None, help="Ausgabedatei (.npz). Default: aus der Config")
+    parser.add_argument("--out", default=None, help="Ausgabedatei (.npz). Default: Test_Sets/<Datum_Uhrzeit>.npz")
     parser.add_argument("--n-scenes", type=int, default=None, help="Anzahl Szenen überschreiben")
     parser.add_argument("--seed", type=int, default=None, help="Seed überschreiben")
     parser.add_argument("--overwrite", action="store_true", help="Vorhandene Ausgabedatei ersetzen")
@@ -181,13 +192,14 @@ if __name__ == "__main__":
         config["n_scenes"] = args.n_scenes
     if args.seed is not None:
         config["seed"] = args.seed
-    out = args.out or os.path.join(HERE, config["out"])
+    out = args.out or new_dataset_path()
     if os.path.exists(out) and not args.overwrite:
-        raise SystemExit(f"{out} existiert schon.\nAnderen \"out\"-Namen in der Config setzen "
-                         f"oder --overwrite anhängen, um die Datei zu ersetzen.")
+        raise SystemExit(f"{out} existiert schon. --overwrite anhängen, um die Datei zu ersetzen.")
 
     print(f"Config: {args.config}")
     arrays, scenes, meta = generate(config)
+    meta["config_file"] = os.path.basename(args.config)
+    meta["created"] = time.strftime("%Y-%m-%d %H:%M:%S")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     save_dataset(out, arrays, scenes, meta)
 

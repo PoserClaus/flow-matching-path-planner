@@ -56,6 +56,7 @@ def plot_scene(
     title: str | None = None,
     solutions=None,
     grid=None,
+    path_colors=None,
 ):
     """Zeichnet eine Szene in die Achse ax.
 
@@ -67,6 +68,7 @@ def plot_scene(
     solutions:      Liste von Solver-Lösungen, als Linien (Dicke = Gewicht)
     grid:           Belegungsraster des Solvers (solver.occupancy_grid(scene)):
                     Zelllinien + gesperrte Zellen (Hindernis + Radius + Sicherheitsabstand)
+    path_colors:    eine Farbe pro Lösung (Default: PATH_COLORS der Reihe nach)
     """
     xmin, xmax, ymin, ymax = scene.bounds
 
@@ -113,7 +115,8 @@ def plot_scene(
     # Wege des Solvers
     for k, sol in enumerate(solutions or []):
         xy = sol.waypoints
-        ax.plot(xy[:, 0], xy[:, 1], color=PATH_COLORS[k % len(PATH_COLORS)],
+        color = path_colors[k] if path_colors else PATH_COLORS[k % len(PATH_COLORS)]
+        ax.plot(xy[:, 0], xy[:, 1], color=color,
                 lw=1.0 + 4.0 * sol.weight, alpha=0.85, zorder=3,
                 label=f"{sol.length:.1f} m · w={sol.weight:.2f}")
     handles, _ = ax.get_legend_handles_labels()

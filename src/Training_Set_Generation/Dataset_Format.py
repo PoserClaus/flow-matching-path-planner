@@ -19,14 +19,17 @@ Arrays (M = Anzahl Samples, N = Punkte pro Trajektorie):
 
 Zusätzlich (als JSON-Text):
     scenes         Liste von Scene.to_dict()  -> Scene.from_dict()
-    meta           Config, Beschreibung von Szenengenerator, Solver, Sensoren, Version
+    meta           benutzte Config (meta["config"]), Config-Datei, Erzeugungszeit,
+                   Beschreibung von Szenengenerator, Solver, Sensoren, Version
 
 Wichtig fürs Training: Train/Val nach scene_id trennen, nicht nach Sample.
 """
 
 from __future__ import annotations
 
+import glob
 import json
+import os
 
 import numpy as np
 
@@ -50,6 +53,14 @@ def load_dataset(path: str) -> dict:
     data["scenes"] = json.loads(str(data["scenes"]))
     data["meta"] = json.loads(str(data["meta"]))
     return data
+
+
+def newest_dataset(folder: str = "Test_Sets") -> str:
+    """Pfad des zuletzt erzeugten Datensatzes in folder."""
+    files = glob.glob(os.path.join(folder, "*.npz"))
+    if not files:
+        raise SystemExit(f"Kein Datensatz in {folder}/ gefunden. Zuerst Generate_Testset.py ausführen.")
+    return max(files, key=os.path.getmtime)
 
 
 def _to_json(obj):

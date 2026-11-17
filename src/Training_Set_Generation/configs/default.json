@@ -1,7 +1,6 @@
 {
   "seed": 0,
   "n_scenes": 20,
-  "out": "Test_Sets/default.npz",
 
   "car": {"radius": 0.3},
 
@@ -29,8 +28,7 @@
   },
 
   "sensors": [
-    {"type": "lidar", "params": {"n_beams": 360, "max_range": 8.0}},
-    {"type": "imu"}
+    {"type": "lidar", "params": {"n_beams": 360, "max_range": 8.0}}
   ],
 
   "trajectory": {"n_points": 32}

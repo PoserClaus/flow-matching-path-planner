@@ -7,9 +7,10 @@ Jedes Start/Ziel-Paar wird zweimal gezeigt:
             im Fahrzeugframe des Starts (x nach vorne, y nach links)
 
 Aufruf (aus dem Ordner Training_Set_Generation):
-    python Plot_Testset.py Test_Sets/default.npz                 # durchblättern
-    python Plot_Testset.py Test_Sets/default.npz --pdf all.pdf   # alle Szenen als PDF zum Scrollen
-    python Plot_Testset.py Test_Sets/default.npz --save check.png --n 4 --seed 1   # Stichprobe als Bild
+    python Plot_Testset.py                                       # neuesten Datensatz durchblättern
+    python Plot_Testset.py Test_Sets/2026-11-17_14-32-05.npz     # bestimmten Datensatz
+    python Plot_Testset.py --pdf all.pdf                         # alle Szenen als PDF zum Scrollen
+    python Plot_Testset.py --save check.png --n 4 --seed 1       # Stichprobe als Bild
 
 Tasten im Viewer:
     ← / →   vorheriges / nächstes Paar
@@ -30,26 +31,31 @@ import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 
 from Car_Model import CarConfig, vehicle_to_world
-from Dataset_Format import load_dataset
+from Dataset_Format import load_dataset, newest_dataset
 from Scenes import Scene
 from Scenes.Plot_Scene import COLOR_GOAL, COLOR_START, PATH_COLORS, label_pose, plot_scene
 from Sensors import Lidar
 from Solvers import SOLVERS, Solution
 
 
-def plot_pair(ax_world, ax_vehicle, data: dict, pair: int, lidar: Lidar | None, solver=None):
+def plot_pair(ax_world, ax_vehicle, data: dict, pair: int, lidar: Lidar | None, solver=None, show=None):
+    """show: optional Liste, welche Wege des Paars gezeichnet werden (0 = erster). Default: alle."""
     idx = np.flatnonzero(data["pair_id"] == pair)
+    n_paths = len(idx)
     i0 = idx[0]
     scene = Scene.from_dict(data["scenes"][data["scene_id"][i0]])
     start, goal = data["start"][i0].astype(float), data["goal"][i0].astype(float)
     scene.start, scene.goal = start, goal          # nur fürs Zeichnen
+    show = range(n_paths) if show is None else show
+    colors = [PATH_COLORS[k % len(PATH_COLORS)] for k in show]   # Farbe bleibt pro Weg gleich
+    idx = idx[list(show)]
 
     # Weltansicht
     sols = [Solution(vehicle_to_world(data["traj"][i], start), float(data["length"][i]), float(data["weight"][i]))
             for i in idx]
     grid = solver.occupancy_grid(scene) if solver is not None and hasattr(solver, "occupancy_grid") else None
     plot_scene(ax_world, scene, solutions=sols, grid=grid, robot_radius=data["meta"]["car"]["radius"],
-               title=f"Paar {pair} · Szene {data['scene_id'][i0]} · {len(idx)} Wege")
+               title=f"Paar {pair} · Szene {data['scene_id'][i0]} · {n_paths} Wege", path_colors=colors)
 
     # Fahrzeugansicht
     if lidar is not None and "obs/lidar" in data:
@@ -58,10 +64,9 @@ def plot_pair(ax_world, ax_vehicle, data: dict, pair: int, lidar: Lidar | None, 
         a = lidar.beam_angles
         pts = np.stack([lidar.cfg.mount_x + r * np.cos(a), lidar.cfg.mount_y + r * np.sin(a)], -1)
         ax_vehicle.scatter(pts[hit, 0], pts[hit, 1], s=3, color="#d81b60", label="LiDAR")
-    for k, i in enumerate(idx):
+    for color, i in zip(colors, idx):
         t = data["traj"][i]
-        ax_vehicle.plot(t[:, 0], t[:, 1], "-o", ms=2, color=PATH_COLORS[k % len(PATH_COLORS)],
-                        lw=1.0 + 4.0 * data["weight"][i])
+        ax_vehicle.plot(t[:, 0], t[:, 1], "-o", ms=2, color=color, lw=1.0 + 4.0 * data["weight"][i])
     g = data["goal_rel"][i0]
     ax_vehicle.arrow(g[0], g[1], 0.4 * np.cos(g[2]), 0.4 * np.sin(g[2]), width=0.04,
                      head_width=0.15, color=COLOR_GOAL, length_includes_head=True)
@@ -165,7 +170,7 @@ def export_pdf(path: str, data: dict, lidar: Lidar | None, title: str, solver=No
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Datensatz anschauen.")
-    parser.add_argument("path", nargs="?", default="Test_Sets/default.npz")
+    parser.add_argument("path", nargs="?", help="Datensatz (Default: neuester in Test_Sets/)")
     parser.add_argument("--pdf", help="Alle Szenen in diese PDF exportieren (eine Seite pro Szene)")
     parser.add_argument("--save", help="Stichprobe von --n Paaren als Bild speichern")
     parser.add_argument("--no-grid", action="store_true", help="A*-Raster nicht einblenden")
@@ -173,6 +178,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0, help="Zufallsauswahl für --save")
     args = parser.parse_args()
 
+    args.path = args.path or newest_dataset()
     data = load_dataset(args.path)
     lidar = _lidar_from_meta(data["meta"])
     solver = None if args.no_grid else _solver_from_meta(data["meta"])

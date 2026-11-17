@@ -1,28 +1,43 @@
 # Generating training data
 
-Run everything from `src/Training_Set_Generation`:
+**Easiest: the app.** Set the config, click *Generate*, see the dashboard:
+
+```
+cd src/Training_Set_Generation
+..\..\.venv\Scripts\streamlit run App.py
+```
+
+(Install once from the repo root: `pip install -r requirements.txt`.)
+
+**Or from the command line**, from `src/Training_Set_Generation`:
 
 ```
 cd src/Training_Set_Generation
 
 python Generate_Testset.py --n-scenes 2                 # 1. quick test
 python Generate_Testset.py                              # 2. generate with configs/default.json
-python Plot_Testset.py Test_Sets/default.npz            # 3. browse the result (← → pair, ↑ ↓ scene)
-python Plot_Testset.py Test_Sets/default.npz --pdf all.pdf   # or: all scenes as a scrollable PDF
+python Dashboard_Testset.py                             # 3. overview of the newest dataset
+python Plot_Testset.py                                  #    browse every pair (← → pair, ↑ ↓ scene)
+python Plot_Testset.py --pdf all.pdf                    #    or: all scenes as a scrollable PDF
 ```
 
-Own experiment: copy `configs/default.json`, change what you want, set a new `out`, then
+Every run creates a new file `Test_Sets/<date>_<time>.npz`, nothing gets overwritten.
+The config used is stored inside the dataset (`meta["config"]`) and shown in the dashboard.
+Dashboard and viewer open the newest dataset; pass a path to open an older one.
+
+Own experiment: copy `configs/default.json`, change what you want, then
 `python Generate_Testset.py --config configs/my_test.json`.
 
-Options: `--config` (config file), `--out` (output file), `--n-scenes`, `--seed`,
-`--overwrite` (replace an existing output file; without it the generator stops instead of overwriting).
+Options: `--config` (config file), `--out` (own file name instead of date/time), `--n-scenes`, `--seed`,
+`--overwrite` (only needed with `--out` if that file already exists).
 
 Load in training:
 
 ```python
 from Dataset_Format import load_dataset
-d = load_dataset("Test_Sets/default.npz")
+d = load_dataset("Test_Sets/2026-11-17_14-32-05.npz")
 d["obs/lidar"], d["goal_rel"], d["traj"], d["weight"], d["scene_id"]
+d["meta"]["config"]          # config used to generate it
 ```
 
 Fields are explained in `Dataset_Format.py`. Split train/val by `scene_id`, not by sample.
@@ -35,7 +50,6 @@ Units: metres, radians. `[a, b]` = random value between a and b.
 |---|---|
 | `seed` | Random seed. Same seed = same dataset. |
 | `n_scenes` | Number of random scenes. |
-| `out` | Output file. |
 | `car.radius` | Robot size (modelled as a circle). |
 | `scene.type` | Scene generator. |
 | `scene.params.n_boxes` | Number of boxes per scene. |
